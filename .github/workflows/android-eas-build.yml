@@ -36,7 +36,10 @@ jobs:
           token: ${{ secrets.EXPO_TOKEN }}
 
       - name: Resolve EAS Project ID
-        run: echo "EAS_PROJECT_ID=$(node -p \"require('./app.json').expo.extra.eas.projectId\")" >> $GITHUB_ENV
+        shell: bash
+        run: |
+          EAS_PROJECT_ID=$(node -p "require('./app.json').expo.extra.eas.projectId")
+          echo "EAS_PROJECT_ID=$EAS_PROJECT_ID" >> "$GITHUB_ENV"
 
       - name: EAS Build (Android)
         run: |
