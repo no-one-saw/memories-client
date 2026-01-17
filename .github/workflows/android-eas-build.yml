@@ -35,11 +35,12 @@ jobs:
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
 
+      - name: Resolve EAS Project ID
+        run: echo "EAS_PROJECT_ID=$(node -p \"require('./app.json').expo.extra.eas.projectId\")" >> $GITHUB_ENV
+
       - name: EAS Build (Android)
-        env:
-          EAS_NO_VCS: 1
         run: |
-          eas build --platform android --profile ${{ inputs.profile }} --non-interactive --json > eas-build.json
+          eas build --platform android --profile ${{ inputs.profile }} --non-interactive --json --project-id $EAS_PROJECT_ID > eas-build.json
           cat eas-build.json
 
       - name: Upload build metadata
