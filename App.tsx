@@ -6,6 +6,7 @@ import {
   Platform,
   RefreshControl,
   SafeAreaView,
+  StatusBar as RNStatusBar,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -161,7 +162,8 @@ export default function App() {
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: '#1d2021'
+    backgroundColor: '#1d2021',
+    paddingTop: Platform.OS === 'android' ? RNStatusBar.currentHeight ?? 0 : 0
   },
   webWrap: {
     flex: 1
