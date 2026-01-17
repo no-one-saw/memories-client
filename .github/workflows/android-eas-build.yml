@@ -35,16 +35,27 @@ jobs:
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
 
+      - name: EAS Diagnostics
+        shell: bash
+        run: |
+          expo --version || true
+          eas --version || true
+          eas whoami || true
+
       - name: Resolve EAS Project ID
         shell: bash
         run: |
           EAS_PROJECT_ID=$(node -p "require('./app.json').expo.extra.eas.projectId")
+          echo "Resolved EAS project id: $EAS_PROJECT_ID"
           echo "EAS_PROJECT_ID=$EAS_PROJECT_ID" >> "$GITHUB_ENV"
 
       - name: EAS Build (Android)
+        shell: bash
+        env:
+          EAS_DEBUG: 1
         run: |
-          eas build --platform android --profile ${{ inputs.profile }} --non-interactive --json --project-id $EAS_PROJECT_ID > eas-build.json
-          cat eas-build.json
+          set -euo pipefail
+          eas build --platform android --profile ${{ inputs.profile }} --non-interactive --json --project-id "$EAS_PROJECT_ID" | tee eas-build.json
 
       - name: Upload build metadata
         uses: actions/upload-artifact@v4
