@@ -55,7 +55,7 @@ jobs:
           EAS_DEBUG: 1
         run: |
           set -euo pipefail
-          eas build --platform android --profile ${{ inputs.profile }} --non-interactive --json --project-id "$EAS_PROJECT_ID" | tee eas-build.json
+          eas build --platform android --profile ${{ inputs.profile }} --non-interactive --json | tee eas-build.json
 
       - name: Upload build metadata
         uses: actions/upload-artifact@v4
