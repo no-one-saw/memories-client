@@ -16,6 +16,7 @@ import { WebView } from 'react-native-webview';
 import type { WebViewNavigation } from 'react-native-webview';
 
 const BASE_URL = 'https://maybe-someone-saw.vercel.app/';
+const ALLOWED_HOSTS = ['maybe-someone-saw.vercel.app', 'open.spotify.com', 'spotify.com', 'accounts.spotify.com'];
 
 export default function App() {
   const webRef = useRef<WebView | null>(null);
@@ -55,8 +56,9 @@ export default function App() {
     (url: string) => {
       try {
         const u = new URL(url);
-        if (!baseHost) return false;
-        return u.host !== baseHost;
+        if (ALLOWED_HOSTS.includes(u.host)) return false;
+        if (baseHost && u.host === baseHost) return false;
+        return true;
       } catch {
         return false;
       }
@@ -69,13 +71,15 @@ export default function App() {
       const url = typeof req?.url === 'string' ? req.url : '';
       if (!url) return true;
 
+      const isTopFrame = typeof req?.isTopFrame === 'boolean' ? req.isTopFrame : true;
+
       if (url.startsWith('mailto:') || url.startsWith('tel:') || url.startsWith('sms:')) {
         void openExternal(url);
         return false;
       }
 
       if (url.startsWith('http://') || url.startsWith('https://')) {
-        if (isExternalToBase(url)) {
+        if (isTopFrame && isExternalToBase(url)) {
           void openExternal(url);
           return false;
         }
@@ -131,10 +135,13 @@ export default function App() {
               setRefreshing(false);
             }}
             startInLoadingState
+            originWhitelist={['*']}
             pullToRefreshEnabled={Platform.OS === 'android'}
             onShouldStartLoadWithRequest={onShouldStartLoadWithRequest}
             onNavigationStateChange={onNavigationStateChange}
             allowsBackForwardNavigationGestures
+            allowsInlineMediaPlayback
+            mediaPlaybackRequiresUserAction={false}
             sharedCookiesEnabled
             thirdPartyCookiesEnabled
             javaScriptEnabled
