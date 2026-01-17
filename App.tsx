@@ -73,12 +73,27 @@ export default function App() {
 
       const isTopFrame = typeof req?.isTopFrame === 'boolean' ? req.isTopFrame : true;
 
+      if (url.startsWith('spotify:') || url.startsWith('intent:')) {
+        void openExternal(url);
+        return false;
+      }
+
       if (url.startsWith('mailto:') || url.startsWith('tel:') || url.startsWith('sms:')) {
         void openExternal(url);
         return false;
       }
 
       if (url.startsWith('http://') || url.startsWith('https://')) {
+        if (isTopFrame) {
+          try {
+            const u = new URL(url);
+            const host = u.host.toLowerCase();
+            if ((host === 'open.spotify.com' || host === 'spotify.com') && !u.pathname.startsWith('/embed/')) {
+              void openExternal(url);
+              return false;
+            }
+          } catch {}
+        }
         if (isTopFrame && isExternalToBase(url)) {
           void openExternal(url);
           return false;
