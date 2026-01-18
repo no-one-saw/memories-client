@@ -25,9 +25,16 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [hasError, setHasError] = useState(false);
+  const [errorDetail, setErrorDetail] = useState('');
 
   const clientSecret = useMemo(() => {
-    const extra = (Constants.expoConfig?.extra || {}) as Record<string, unknown>;
+    const maybeExtra =
+      (Constants.expoConfig?.extra as Record<string, unknown> | undefined) ||
+      ((Constants as any).expoGoConfig?.extra as Record<string, unknown> | undefined) ||
+      ((Constants as any).manifest?.extra as Record<string, unknown> | undefined) ||
+      ((Constants as any).manifest2?.extra as Record<string, unknown> | undefined) ||
+      {};
+    const extra = maybeExtra as Record<string, unknown>;
     return typeof extra.MV_CLIENT_SECRET === 'string' ? extra.MV_CLIENT_SECRET : '';
   }, []);
 
@@ -49,12 +56,14 @@ export default function App() {
   const onRefresh = useCallback(() => {
     setRefreshing(true);
     setHasError(false);
+    setErrorDetail('');
     webRef.current?.reload();
     setTimeout(() => setRefreshing(false), 900);
   }, []);
 
   const retry = useCallback(() => {
     setHasError(false);
+    setErrorDetail('');
     setLoading(true);
     webRef.current?.reload();
   }, []);
@@ -152,6 +161,7 @@ export default function App() {
         <View style={styles.errorWrap}>
           <Text style={styles.errorTitle}>Connection error</Text>
           <Text style={styles.errorBody}>We couldn’t load the site.</Text>
+          {errorDetail ? <Text style={styles.errorDetail}>{errorDetail}</Text> : null}
           <TouchableOpacity style={styles.retryBtn} onPress={retry}>
             <Text style={styles.retryText}>Retry</Text>
           </TouchableOpacity>
@@ -167,17 +177,30 @@ export default function App() {
             onLoadStart={() => {
               setLoading(true);
               setHasError(false);
+              setErrorDetail('');
             }}
             onLoadEnd={() => {
               setLoading(false);
               setRefreshing(false);
             }}
-            onError={() => {
+            onError={(e) => {
+              const ne = (e as any)?.nativeEvent;
+              const desc = typeof ne?.description === 'string' ? ne.description : '';
+              const code = typeof ne?.code === 'number' ? String(ne.code) : '';
+              const url = typeof ne?.url === 'string' ? ne.url : '';
+              const parts = [code ? `code=${code}` : '', desc ? `desc=${desc}` : '', url ? `url=${url}` : ''].filter(Boolean);
+              setErrorDetail(parts.join(' | '));
               setHasError(true);
               setLoading(false);
               setRefreshing(false);
             }}
-            onHttpError={() => {
+            onHttpError={(e) => {
+              const ne = (e as any)?.nativeEvent;
+              const statusCode = typeof ne?.statusCode === 'number' ? String(ne.statusCode) : '';
+              const url = typeof ne?.url === 'string' ? ne.url : '';
+              const desc = typeof ne?.description === 'string' ? ne.description : '';
+              const parts = [statusCode ? `http=${statusCode}` : '', desc ? `desc=${desc}` : '', url ? `url=${url}` : ''].filter(Boolean);
+              setErrorDetail(parts.join(' | '));
               setHasError(true);
               setLoading(false);
               setRefreshing(false);
@@ -320,6 +343,11 @@ const styles = StyleSheet.create({
   errorBody: {
     fontSize: 13,
     color: '#a89984',
+    marginBottom: 14
+  },
+  errorDetail: {
+    fontSize: 12,
+    color: '#bdae93',
     marginBottom: 14
   },
   retryBtn: {
