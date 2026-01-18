@@ -156,7 +156,7 @@ export default function App() {
 
   return (
     <SafeAreaView style={styles.safe}>
-      <StatusBar style="light" />
+      <StatusBar style="light" translucent backgroundColor="transparent" />
       {hasError ? (
         <View style={styles.errorWrap}>
           <Text style={styles.errorTitle}>Connection error</Text>
@@ -262,8 +262,7 @@ export default function App() {
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: '#1d2021',
-    paddingTop: Platform.OS === 'android' ? RNStatusBar.currentHeight ?? 0 : 0
+    backgroundColor: '#1d2021'
   },
   webWrap: {
     flex: 1,
