@@ -1,7 +1,8 @@
 import { StatusBar } from 'expo-status-bar';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Animated,
   Linking,
   Platform,
   RefreshControl,
@@ -23,6 +24,8 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [hasError, setHasError] = useState(false);
+
+  const loadingPulse = useRef(new Animated.Value(0)).current;
 
   const baseHost = useMemo(() => {
     try {
@@ -113,6 +116,24 @@ export default function App() {
     }
   }, [openExternal]);
 
+  useEffect(() => {
+    if (!loading) {
+      loadingPulse.stopAnimation();
+      loadingPulse.setValue(0);
+      return;
+    }
+
+    const anim = Animated.loop(
+      Animated.sequence([
+        Animated.timing(loadingPulse, { toValue: 1, duration: 800, useNativeDriver: true }),
+        Animated.timing(loadingPulse, { toValue: 0, duration: 800, useNativeDriver: true })
+      ])
+    );
+
+    anim.start();
+    return () => anim.stop();
+  }, [loading, loadingPulse]);
+
   return (
     <SafeAreaView style={styles.safe}>
       <StatusBar style="light" />
@@ -172,7 +193,29 @@ export default function App() {
 
           {loading ? (
             <View style={styles.loadingOverlay} pointerEvents="none">
-              <ActivityIndicator size="large" color="#fbf1c7" />
+              <Animated.View
+                style={[
+                  styles.loadingCard,
+                  {
+                    opacity: loadingPulse.interpolate({ inputRange: [0, 1], outputRange: [0.92, 1] }),
+                    transform: [
+                      {
+                        scale: loadingPulse.interpolate({ inputRange: [0, 1], outputRange: [0.985, 1] })
+                      }
+                    ]
+                  }
+                ]}
+              >
+                <View style={styles.brandMark}>
+                  <Text style={styles.brandMarkText}>N</Text>
+                </View>
+                <Text style={styles.loadingTitle}>Nen&apos;s Memories</Text>
+                <Text style={styles.loadingSubtitle}>Opening your notes…</Text>
+                <View style={styles.loadingSpinnerRow}>
+                  <ActivityIndicator size="small" color="#fbf1c7" />
+                  <Text style={styles.loadingSpinnerText}>Loading</Text>
+                </View>
+              </Animated.View>
             </View>
           ) : null}
         </View>
@@ -195,7 +238,56 @@ const styles = StyleSheet.create({
     inset: 0,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(29,32,33,0.35)'
+    backgroundColor: 'rgba(29,32,33,0.55)'
+  },
+  loadingCard: {
+    width: '82%',
+    maxWidth: 420,
+    borderRadius: 22,
+    paddingVertical: 18,
+    paddingHorizontal: 18,
+    backgroundColor: 'rgba(40,40,40,0.92)',
+    borderWidth: 1,
+    borderColor: 'rgba(251,241,199,0.12)',
+    alignItems: 'center'
+  },
+  brandMark: {
+    width: 54,
+    height: 54,
+    borderRadius: 18,
+    backgroundColor: 'rgba(251,241,199,0.10)',
+    borderWidth: 1,
+    borderColor: 'rgba(251,241,199,0.18)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10
+  },
+  brandMarkText: {
+    color: '#fbf1c7',
+    fontWeight: '800',
+    fontSize: 22
+  },
+  loadingTitle: {
+    color: '#fbf1c7',
+    fontWeight: '700',
+    fontSize: 18,
+    marginBottom: 4
+  },
+  loadingSubtitle: {
+    color: '#bdae93',
+    fontSize: 13,
+    marginBottom: 14
+  },
+  loadingSpinnerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10
+  },
+  loadingSpinnerText: {
+    color: '#fbf1c7',
+    fontSize: 13,
+    fontWeight: '600',
+    opacity: 0.9
   },
   errorWrap: {
     flex: 1,
