@@ -151,6 +151,7 @@ export default function App() {
             ref={(r) => {
               webRef.current = r;
             }}
+            style={styles.webView}
             source={{ uri: BASE_URL }}
             onLoadStart={() => {
               setLoading(true);
@@ -231,14 +232,18 @@ const styles = StyleSheet.create({
     paddingTop: Platform.OS === 'android' ? RNStatusBar.currentHeight ?? 0 : 0
   },
   webWrap: {
-    flex: 1
+    flex: 1,
+    backgroundColor: '#1d2021'
+  },
+  webView: {
+    backgroundColor: '#1d2021'
   },
   loadingOverlay: {
     position: 'absolute',
     inset: 0,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(29,32,33,0.55)'
+    backgroundColor: '#1d2021'
   },
   loadingCard: {
     width: '82%',
