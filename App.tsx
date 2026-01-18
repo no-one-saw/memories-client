@@ -1,4 +1,5 @@
 import { StatusBar } from 'expo-status-bar';
+import Constants from 'expo-constants';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -24,6 +25,16 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [hasError, setHasError] = useState(false);
+
+  const clientSecret = useMemo(() => {
+    const extra = (Constants.expoConfig?.extra || {}) as Record<string, unknown>;
+    return typeof extra.MV_CLIENT_SECRET === 'string' ? extra.MV_CLIENT_SECRET : '';
+  }, []);
+
+  const webSource = useMemo(() => {
+    if (!clientSecret) return { uri: BASE_URL };
+    return { uri: BASE_URL, headers: { 'x-mv-client': clientSecret } };
+  }, [clientSecret]);
 
   const loadingPulse = useRef(new Animated.Value(0)).current;
 
@@ -152,7 +163,7 @@ export default function App() {
               webRef.current = r;
             }}
             style={styles.webView}
-            source={{ uri: BASE_URL }}
+            source={webSource}
             onLoadStart={() => {
               setLoading(true);
               setHasError(false);

@@ -32,6 +32,7 @@
       "favicon": "./assets/favicon.png"
     },
     "extra": {
+      "MV_CLIENT_SECRET": "",
       "eas": {
         "projectId": "b4887df5-63a0-4f74-88a3-8c9c79a86e07"
       }
