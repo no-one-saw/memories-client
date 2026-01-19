@@ -1,9 +1,12 @@
 import { StatusBar } from 'expo-status-bar';
 import Constants from 'expo-constants';
+import * as FileSystem from 'expo-file-system';
+import * as IntentLauncher from 'expo-intent-launcher';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Animated,
+  BackHandler,
   Linking,
   Platform,
   RefreshControl,
@@ -20,12 +23,32 @@ import type { WebViewNavigation } from 'react-native-webview';
 const BASE_URL = 'https://maybe-someone-saw.vercel.app/';
 const ALLOWED_HOSTS = ['maybe-someone-saw.vercel.app', 'open.spotify.com', 'spotify.com', 'accounts.spotify.com'];
 
+const RELEASE_REPO = 'no-one-saw/memories-client';
+const RELEASES_LATEST_URL = `https://api.github.com/repos/${RELEASE_REPO}/releases/latest`;
+
+type LatestReleaseInfo = {
+  tag: string;
+  apkUrl: string;
+};
+
+function normalizeTag(t: string) {
+  const s = (t || '').trim();
+  return s.startsWith('v') ? s : `v${s}`;
+}
+
 export default function App() {
   const webRef = useRef<WebView | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [hasError, setHasError] = useState(false);
   const [errorDetail, setErrorDetail] = useState('');
+
+  const [checkingUpdate, setCheckingUpdate] = useState(true);
+  const [updateRequired, setUpdateRequired] = useState(false);
+  const [latestRelease, setLatestRelease] = useState<LatestReleaseInfo | null>(null);
+  const [updateError, setUpdateError] = useState('');
+  const [downloadingUpdate, setDownloadingUpdate] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState(0);
 
   const clientSecret = useMemo(() => {
     const maybeExtra =
@@ -37,6 +60,123 @@ export default function App() {
     const extra = maybeExtra as Record<string, unknown>;
     return typeof extra.MV_CLIENT_SECRET === 'string' ? extra.MV_CLIENT_SECRET : '';
   }, []);
+
+  const localReleaseTag = useMemo(() => {
+    const maybeExtra =
+      (Constants.expoConfig?.extra as Record<string, unknown> | undefined) ||
+      ((Constants as any).expoGoConfig?.extra as Record<string, unknown> | undefined) ||
+      ((Constants as any).manifest?.extra as Record<string, unknown> | undefined) ||
+      ((Constants as any).manifest2?.extra as Record<string, unknown> | undefined) ||
+      {};
+    const extra = maybeExtra as Record<string, unknown>;
+    const t = typeof extra.RELEASE_TAG === 'string' ? extra.RELEASE_TAG : '';
+    return t ? normalizeTag(t) : '';
+  }, []);
+
+  const fetchLatestRelease = useCallback(async (): Promise<LatestReleaseInfo> => {
+    const res = await fetch(RELEASES_LATEST_URL, {
+      headers: {
+        accept: 'application/vnd.github+json'
+      }
+    });
+
+    if (!res.ok) {
+      throw new Error(`release_check_failed:${res.status}`);
+    }
+
+    const data = (await res.json()) as any;
+    const tag = normalizeTag(String(data?.tag_name || ''));
+    const assets = Array.isArray(data?.assets) ? data.assets : [];
+    const apkAsset = assets.find((a: any) => typeof a?.name === 'string' && a.name.toLowerCase().endsWith('.apk')) || null;
+    const apkUrl = String(apkAsset?.browser_download_url || '');
+
+    if (!tag || !apkUrl) {
+      throw new Error('release_invalid');
+    }
+
+    return { tag, apkUrl };
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        setCheckingUpdate(true);
+        setUpdateError('');
+
+        // If we don't have a local embedded tag (e.g., Expo Go / dev), don't block.
+        if (!localReleaseTag) {
+          if (!alive) return;
+          setUpdateRequired(false);
+          setCheckingUpdate(false);
+          return;
+        }
+
+        const latest = await fetchLatestRelease();
+        if (!alive) return;
+        setLatestRelease(latest);
+
+        const needsUpdate = latest.tag !== localReleaseTag;
+        setUpdateRequired(needsUpdate);
+      } catch (e: any) {
+        if (!alive) return;
+        const msg = typeof e?.message === 'string' ? e.message : 'update_check_failed';
+        // If we have a release tag baked into the app, update check must succeed.
+        // Otherwise we can't guarantee freshness, so we block.
+        setUpdateRequired(true);
+        setUpdateError(msg);
+      } finally {
+        if (!alive) return;
+        setCheckingUpdate(false);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [fetchLatestRelease, localReleaseTag]);
+
+  const startUpdate = useCallback(async () => {
+    if (Platform.OS !== 'android') {
+      return;
+    }
+    if (!latestRelease?.apkUrl) {
+      setUpdateError('missing_apk_url');
+      return;
+    }
+
+    setDownloadingUpdate(true);
+    setUpdateError('');
+    setDownloadProgress(0);
+
+    try {
+      const out = `${FileSystem.documentDirectory || ''}update-${latestRelease.tag}.apk`;
+      const dl = FileSystem.createDownloadResumable(
+        latestRelease.apkUrl,
+        out,
+        {},
+        (p: FileSystem.DownloadProgressData) => {
+          const total = typeof p?.totalBytesExpectedToWrite === 'number' ? p.totalBytesExpectedToWrite : 0;
+          const written = typeof p?.totalBytesWritten === 'number' ? p.totalBytesWritten : 0;
+          if (total > 0) setDownloadProgress(written / total);
+        }
+      );
+
+      const result = await dl.downloadAsync();
+      const uri = result?.uri || out;
+
+      const contentUri = await FileSystem.getContentUriAsync(uri);
+      await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
+        data: contentUri,
+        flags: 1,
+        type: 'application/vnd.android.package-archive'
+      });
+    } catch (e: any) {
+      const msg = typeof e?.message === 'string' ? e.message : 'update_download_failed';
+      setUpdateError(msg);
+    } finally {
+      setDownloadingUpdate(false);
+    }
+  }, [latestRelease]);
 
   const webSource = useMemo(() => {
     if (!clientSecret) return { uri: BASE_URL };
@@ -157,6 +297,51 @@ export default function App() {
   return (
     <SafeAreaView style={styles.safe}>
       <StatusBar style="light" translucent backgroundColor="transparent" />
+      {checkingUpdate ? (
+        <View style={styles.updateWrap}>
+          <Text style={styles.updateTitle}>Checking update…</Text>
+          <Text style={styles.updateBody}>Please wait.</Text>
+          <ActivityIndicator size="small" color="#fbf1c7" style={{ marginTop: 14 }} />
+          {updateError ? <Text style={styles.updateDetail}>{updateError}</Text> : null}
+        </View>
+      ) : updateRequired ? (
+        <View style={styles.updateWrap}>
+          <Text style={styles.updateTitle}>Update required</Text>
+          <Text style={styles.updateBody}>A new version is available. You must update to continue.</Text>
+
+          <View style={{ marginTop: 12, gap: 8 }}>
+            <Text style={styles.updateMeta}>Current: {localReleaseTag}</Text>
+            <Text style={styles.updateMeta}>Latest: {latestRelease?.tag || ''}</Text>
+          </View>
+
+          {downloadingUpdate ? (
+            <View style={{ marginTop: 16, width: '100%' }}>
+              <View style={styles.progressTrack}>
+                <View style={[styles.progressFill, { width: `${Math.round(downloadProgress * 100)}%` }]} />
+              </View>
+              <Text style={styles.updateBody}>
+                Downloading… {Math.round(downloadProgress * 100)}%
+              </Text>
+            </View>
+          ) : (
+            <TouchableOpacity style={styles.updateBtn} onPress={() => void startUpdate()}>
+              <Text style={styles.updateBtnText}>Download & Install</Text>
+            </TouchableOpacity>
+          )}
+
+          {updateError ? <Text style={styles.updateDetail}>{updateError}</Text> : null}
+
+          <TouchableOpacity
+            style={styles.updateCancel}
+            onPress={() => {
+              BackHandler.exitApp();
+            }}
+          >
+            <Text style={styles.updateCancelText}>Cancel</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
+
       {hasError ? (
         <View style={styles.errorWrap}>
           <Text style={styles.errorTitle}>Connection error</Text>
@@ -166,7 +351,7 @@ export default function App() {
             <Text style={styles.retryText}>Retry</Text>
           </TouchableOpacity>
         </View>
-      ) : (
+      ) : !checkingUpdate && !updateRequired ? (
         <View style={styles.webWrap}>
           <WebView
             ref={(r) => {
@@ -254,7 +439,7 @@ export default function App() {
             </View>
           ) : null}
         </View>
-      )}
+      ) : null}
     </SafeAreaView>
   );
 }
@@ -332,6 +517,67 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     padding: 24
+  },
+  updateWrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+    backgroundColor: '#1d2021'
+  },
+  updateTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#fbf1c7',
+    marginBottom: 8
+  },
+  updateBody: {
+    fontSize: 13,
+    color: '#a89984',
+    textAlign: 'center'
+  },
+  updateMeta: {
+    fontSize: 12,
+    color: '#bdae93',
+    textAlign: 'center'
+  },
+  updateDetail: {
+    marginTop: 10,
+    fontSize: 12,
+    color: '#ffb4b4',
+    textAlign: 'center'
+  },
+  updateBtn: {
+    marginTop: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 14,
+    backgroundColor: 'rgba(60,56,54,0.75)'
+  },
+  updateBtnText: {
+    color: '#fbf1c7',
+    fontWeight: '700'
+  },
+  updateCancel: {
+    marginTop: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 14,
+    backgroundColor: 'rgba(40,40,40,0.62)'
+  },
+  updateCancelText: {
+    color: '#a89984',
+    fontWeight: '600'
+  },
+  progressTrack: {
+    height: 10,
+    borderRadius: 999,
+    backgroundColor: 'rgba(60,56,54,0.75)',
+    overflow: 'hidden'
+  },
+  progressFill: {
+    height: '100%',
+    backgroundColor: '#458588'
   },
   errorTitle: {
     fontSize: 18,
