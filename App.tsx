@@ -53,6 +53,23 @@ export default function App() {
     }
   }, []);
 
+  const injectedSafeTop = useMemo(() => {
+    if (Platform.OS !== 'android') return '';
+    const top = typeof RNStatusBar.currentHeight === 'number' ? RNStatusBar.currentHeight : 0;
+    if (!top) return '';
+    return `
+(function () {
+  try {
+    var top = ${Math.round(top)};
+    var style = document.createElement('style');
+    style.setAttribute('data-mv-safe-top', '1');
+    style.textContent = 'html,body{padding-top:' + top + 'px !important;}';
+    document.head.appendChild(style);
+  } catch (e) {}
+})();
+true;`;
+  }, []);
+
   const onRefresh = useCallback(() => {
     setRefreshing(true);
     setHasError(false);
@@ -174,6 +191,7 @@ export default function App() {
             }}
             style={styles.webView}
             source={webSource}
+            injectedJavaScriptBeforeContentLoaded={injectedSafeTop}
             onLoadStart={() => {
               setLoading(true);
               setHasError(false);
