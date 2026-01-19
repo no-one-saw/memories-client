@@ -23,12 +23,11 @@ import type { WebViewNavigation } from 'react-native-webview';
 const BASE_URL = 'https://maybe-someone-saw.vercel.app/';
 const ALLOWED_HOSTS = ['maybe-someone-saw.vercel.app', 'open.spotify.com', 'spotify.com', 'accounts.spotify.com'];
 
-const RELEASE_REPO = 'no-one-saw/memories-client';
-const RELEASES_LATEST_URL = `https://api.github.com/repos/${RELEASE_REPO}/releases/latest`;
+const CLIENT_UPDATE_URL = `${BASE_URL.replace(/\/$/, '')}/api/client/update`;
 
-type LatestReleaseInfo = {
-  tag: string;
-  apkUrl: string;
+type ClientUpdateInfo = {
+  requiredVersion: string | null;
+  apkUrl: string | null;
 };
 
 function normalizeTag(t: string) {
@@ -45,7 +44,7 @@ export default function App() {
 
   const [checkingUpdate, setCheckingUpdate] = useState(true);
   const [updateRequired, setUpdateRequired] = useState(false);
-  const [latestRelease, setLatestRelease] = useState<LatestReleaseInfo | null>(null);
+  const [updateInfo, setUpdateInfo] = useState<ClientUpdateInfo | null>(null);
   const [updateError, setUpdateError] = useState('');
   const [downloadingUpdate, setDownloadingUpdate] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState(0);
@@ -73,28 +72,20 @@ export default function App() {
     return t ? normalizeTag(t) : '';
   }, []);
 
-  const fetchLatestRelease = useCallback(async (): Promise<LatestReleaseInfo> => {
-    const res = await fetch(RELEASES_LATEST_URL, {
-      headers: {
-        accept: 'application/vnd.github+json'
-      }
-    });
+  const fetchUpdateInfo = useCallback(async (): Promise<ClientUpdateInfo> => {
+    const headers: Record<string, string> = { accept: 'application/json' };
+    if (clientSecret) headers['x-mv-client'] = clientSecret;
+    const res = await fetch(CLIENT_UPDATE_URL, { headers });
 
     if (!res.ok) {
-      throw new Error(`release_check_failed:${res.status}`);
+      throw new Error(`update_check_failed:${res.status}`);
     }
 
     const data = (await res.json()) as any;
-    const tag = normalizeTag(String(data?.tag_name || ''));
-    const assets = Array.isArray(data?.assets) ? data.assets : [];
-    const apkAsset = assets.find((a: any) => typeof a?.name === 'string' && a.name.toLowerCase().endsWith('.apk')) || null;
-    const apkUrl = String(apkAsset?.browser_download_url || '');
+    const requiredVersion = typeof data?.requiredVersion === 'string' ? normalizeTag(data.requiredVersion) : null;
+    const apkUrl = typeof data?.apkUrl === 'string' ? String(data.apkUrl) : null;
 
-    if (!tag || !apkUrl) {
-      throw new Error('release_invalid');
-    }
-
-    return { tag, apkUrl };
+    return { requiredVersion, apkUrl };
   }, []);
 
   useEffect(() => {
@@ -112,11 +103,17 @@ export default function App() {
           return;
         }
 
-        const latest = await fetchLatestRelease();
+        const info = await fetchUpdateInfo();
         if (!alive) return;
-        setLatestRelease(latest);
+        setUpdateInfo(info);
 
-        const needsUpdate = latest.tag !== localReleaseTag;
+        const required = info?.requiredVersion ? normalizeTag(info.requiredVersion) : '';
+        if (!required) {
+          setUpdateRequired(false);
+          return;
+        }
+
+        const needsUpdate = required !== localReleaseTag;
         setUpdateRequired(needsUpdate);
       } catch (e: any) {
         if (!alive) return;
@@ -133,13 +130,13 @@ export default function App() {
     return () => {
       alive = false;
     };
-  }, [fetchLatestRelease, localReleaseTag]);
+  }, [fetchUpdateInfo, localReleaseTag]);
 
   const startUpdate = useCallback(async () => {
     if (Platform.OS !== 'android') {
       return;
     }
-    if (!latestRelease?.apkUrl) {
+    if (!updateInfo?.apkUrl) {
       setUpdateError('missing_apk_url');
       return;
     }
@@ -149,12 +146,13 @@ export default function App() {
     setDownloadProgress(0);
 
     try {
-      const out = `${FileSystem.documentDirectory || ''}update-${latestRelease.tag}.apk`;
+      const baseDir = (FileSystem as any).documentDirectory || (FileSystem as any).cacheDirectory || '';
+      const out = `${baseDir}update-${localReleaseTag || 'latest'}.apk`;
       const dl = FileSystem.createDownloadResumable(
-        latestRelease.apkUrl,
+        updateInfo.apkUrl,
         out,
         {},
-        (p: FileSystem.DownloadProgressData) => {
+        (p: any) => {
           const total = typeof p?.totalBytesExpectedToWrite === 'number' ? p.totalBytesExpectedToWrite : 0;
           const written = typeof p?.totalBytesWritten === 'number' ? p.totalBytesWritten : 0;
           if (total > 0) setDownloadProgress(written / total);
@@ -176,7 +174,7 @@ export default function App() {
     } finally {
       setDownloadingUpdate(false);
     }
-  }, [latestRelease]);
+  }, [localReleaseTag, updateInfo]);
 
   const webSource = useMemo(() => {
     if (!clientSecret) return { uri: BASE_URL };
@@ -311,7 +309,7 @@ export default function App() {
 
           <View style={{ marginTop: 12, gap: 8 }}>
             <Text style={styles.updateMeta}>Current: {localReleaseTag}</Text>
-            <Text style={styles.updateMeta}>Latest: {latestRelease?.tag || ''}</Text>
+            <Text style={styles.updateMeta}>Required: {updateInfo?.requiredVersion || ''}</Text>
           </View>
 
           {downloadingUpdate ? (
