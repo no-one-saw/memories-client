@@ -53,23 +53,6 @@ export default function App() {
     }
   }, []);
 
-  const injectedSafeTop = useMemo(() => {
-    if (Platform.OS !== 'android') return '';
-    const top = typeof RNStatusBar.currentHeight === 'number' ? RNStatusBar.currentHeight : 0;
-    if (!top) return '';
-    return `
-(function () {
-  try {
-    var top = ${Math.round(top)};
-    var style = document.createElement('style');
-    style.setAttribute('data-mv-safe-top', '1');
-    style.textContent = 'html,body{padding-top:' + top + 'px !important;}';
-    document.head.appendChild(style);
-  } catch (e) {}
-})();
-true;`;
-  }, []);
-
   const onRefresh = useCallback(() => {
     setRefreshing(true);
     setHasError(false);
@@ -172,8 +155,15 @@ true;`;
   }, [loading, loadingPulse]);
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <StatusBar style="light" translucent backgroundColor="transparent" />
+    <SafeAreaView
+      style={[
+        styles.safe,
+        Platform.OS === 'android' && typeof RNStatusBar.currentHeight === 'number'
+          ? { paddingTop: RNStatusBar.currentHeight }
+          : null
+      ]}
+    >
+      <StatusBar style="light" translucent={false} backgroundColor="#1d2021" />
       {hasError ? (
         <View style={styles.errorWrap}>
           <Text style={styles.errorTitle}>Connection error</Text>
@@ -191,7 +181,6 @@ true;`;
             }}
             style={styles.webView}
             source={webSource}
-            injectedJavaScriptBeforeContentLoaded={injectedSafeTop}
             onLoadStart={() => {
               setLoading(true);
               setHasError(false);
